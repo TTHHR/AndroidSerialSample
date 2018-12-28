@@ -1,0 +1,2 @@
+# AndroidSerialSample
+mobile phone
