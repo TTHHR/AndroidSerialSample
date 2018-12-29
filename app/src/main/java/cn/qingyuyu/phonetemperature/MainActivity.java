@@ -1,120 +1,180 @@
  package cn.qingyuyu.phonetemperature;
 
-import androidx.annotation.NonNull;
+
 import androidx.appcompat.app.AppCompatActivity;
 
-
 import android.app.PendingIntent;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
-import android.content.pm.PackageManager;
+import android.content.IntentFilter;
 import android.hardware.usb.UsbDevice;
 import android.hardware.usb.UsbDeviceConnection;
 import android.hardware.usb.UsbManager;
 import android.os.Bundle;
-import android.util.Log;
-import android.widget.ArrayAdapter;
-import android.widget.ListView;
 import android.widget.TextView;
 import android.widget.Toast;
-
-import com.felhr.usbserial.SerialInputStream;
-import com.felhr.usbserial.SerialOutputStream;
-import com.felhr.usbserial.UsbSerialDevice;
-import com.felhr.usbserial.UsbSerialInterface;
+import com.hoho.android.usbserial.driver.UsbSerialDriver;
+import com.hoho.android.usbserial.driver.UsbSerialPort;
+import com.hoho.android.usbserial.driver.UsbSerialProber;
 
 import java.io.IOException;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.List;
 
  public class MainActivity extends AppCompatActivity {
 private TextView infoText;
-private ListView listView;
-     private UsbDevice device;
      private UsbManager usbManager;
-     private UsbDeviceConnection connection;
-     private UsbSerialDevice serialPort;
+     UsbSerialPort port;
+     UsbSerialDriver driver;
      boolean running =true;
-     private String recData="";
-     private SerialOutputStream serialOutputStream;
-     private SerialInputStream serialInputStream;
+     private String recData="no data";
+     private static final String ACTION_USB_PERMISSION =
+             "com.android.example.USB_PERMISSION";
+
+
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         infoText=findViewById( R.id.infoText);
-        listView=findViewById(R.id.listView);
         usbManager = (UsbManager) getSystemService(Context.USB_SERVICE);
-         findSerialPortDevice();
+        //申请权限的广播
+        IntentFilter filter = new IntentFilter(ACTION_USB_PERMISSION);
+        filter.addAction(UsbManager.ACTION_USB_DEVICE_DETACHED);
+        filter.addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED);
+        registerReceiver(mUsbReceiver, filter);
+
+        //查找设备
+        findSerialPortDevice();
+
+
+
+
 
     }
      private void findSerialPortDevice() {
-         // This snippet will try to open the first encountered usb device connected, excluding usb root hubs
-         HashMap<String, UsbDevice> usbDevices = usbManager.getDeviceList();
-         if (!usbDevices.isEmpty()) {
-             boolean keep = true;
-             for (Map.Entry<String, UsbDevice> entry : usbDevices.entrySet()) {
-                 device = entry.getValue();
-                 int deviceVID = device.getVendorId();
-                 int devicePID = device.getProductId();
+         //查找所有插入的设备
+         List<UsbSerialDriver> availableDrivers = UsbSerialProber.getDefaultProber().findAllDrivers(usbManager);
+         if(!availableDrivers.isEmpty()) {
+             driver = availableDrivers.get(0);//偷懒，一般只有一个设备
+             requestUserPermission(driver.getDevice());
+         }
+     }
+     //申请权限
+     private void requestUserPermission(UsbDevice device) {
+         Toast.makeText(this, "request", Toast.LENGTH_SHORT).show();
+         PendingIntent mPendingIntent = PendingIntent.getBroadcast(this, 0, new Intent(ACTION_USB_PERMISSION), 0);
+         usbManager.requestPermission(device,mPendingIntent);
+     }
 
-                 if (deviceVID != 0x1d6b && (devicePID != 0x0001 && devicePID != 0x0002 && devicePID != 0x0003) && deviceVID != 0x5c6 && devicePID != 0x904c) {
 
-                     requestUserPermission();
-                     keep = false;
+     //打开设备
+     public boolean openPort() {
+         // 打开设备，建立通信连接
+         UsbDeviceConnection connection = usbManager.openDevice(driver.getDevice());
+         if (connection == null) {
+             // You probably need to call UsbManager.requestPermission(driver.getDevice(), ..)
+             return false;
+         }
+
+
+         //打开端口，设置端口参数
+          port = driver.getPorts().get(0);//一般只有一个接口，一个端口
+         try {
+             port.open(connection);
+//四个参数分别是：波特率，数据位，停止位，校验位
+             port.setParameters(9600, 8, UsbSerialPort.STOPBITS_1, UsbSerialPort.PARITY_NONE);
+                new Thread(new Runnable() {
+                    @Override
+                    public void run() {
+                        while (running)
+                        {
+                            try {
+                                Thread.sleep(1000);
+                                byte buffer[]=new byte[26];
+                                int l=port.read(buffer,1000);
+                                if(l!=0) {
+                                    recData = new String(buffer, 0, l);//数据放入recData
+                                    runOnUiThread(new Runnable() {
+                                        @Override
+                                        public void run() {
+                                            infoText.setText("当前温度："+recData);
+                                        }
+                                    });
+                                    if(Float.parseFloat(recData)<5)//温度小于5度
+                                    {
+                                        port.write("start".getBytes(),"start".length());//让单片机开始工作
+                                    }
+                                    else if(Float.parseFloat(recData)>25)
+                                    {
+                                        port.write("close".getBytes(),"close".length());
+                                    }
+                                }
+
+                            } catch (Exception e) {
+                                runOnUiThread(new Runnable() {
+                                    @Override
+                                    public void run() {
+                                        infoText.setText("打开设备出错"+e.toString());
+                                    }
+                                });
+                            }
+                        }
+                    }
+                }).start();
+         } catch (Exception e) {
+             Toast.makeText(this,""+e,Toast.LENGTH_SHORT).show();
+         }
+         return true;
+     }
+     private final BroadcastReceiver mUsbReceiver = new BroadcastReceiver() {
+         @Override
+         public void onReceive(Context context, Intent intent) {
+             String action = intent.getAction();
+             infoText.setText(action);
+             if (ACTION_USB_PERMISSION.equals(action)) {//申请权限广播
+                 synchronized (this) {
+                     UsbDevice usbDevice = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
+                     if (intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)) {
+                         if(null != usbDevice){
+                           infoText.setText("获得权限");
+                           openPort();
+                         }
+                     }
+
                  }
-                 if (!keep)
-                     break;
+
+             }
+             if (action.equals(UsbManager.ACTION_USB_ACCESSORY_DETACHED)) {//设备拔出广播
+                 UsbDevice usbDevice = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
+                 if (usbDevice != null) {
+                     running=false;
+                     try {
+                         port.close();
+                     } catch (IOException e) {
+                         e.printStackTrace();
+                     }
+                     infoText.setText("与设备断开连接");
+                 }
+             }else if (action.equals(UsbManager.ACTION_USB_DEVICE_ATTACHED)){
+                 //当设备插入时执行具体操作
+                 infoText.setText("设备接入");
              }
          }
-     }
-     private void requestUserPermission() {
-         Toast.makeText(this,"request",Toast.LENGTH_SHORT).show();
-         PendingIntent mPendingIntent = PendingIntent.getBroadcast(this, 0, new Intent("com.android.example.USB_PERMISSION"), 0);
-         usbManager.requestPermission(device, mPendingIntent);
-     }
-
-     @Override
-     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
-         if (grantResults[0] == PackageManager.PERMISSION_GRANTED)// 获取到权限，作相应处理
-         {
-             Toast.makeText(this,"打开串口",Toast.LENGTH_SHORT).show();
-             connection = usbManager.openDevice(device);
-             serialPort = UsbSerialDevice.createUsbSerialDevice(device, connection);
-             serialPort.syncOpen();
-             serialPort.setBaudRate(9600);
-             serialPort.setDataBits(UsbSerialInterface.DATA_BITS_8);
-             serialPort.setStopBits(UsbSerialInterface.STOP_BITS_1);
-             serialPort.setParity(UsbSerialInterface.PARITY_NONE);
-             serialInputStream = serialPort.getInputStream();
-              serialOutputStream = serialPort.getOutputStream();
-            new Thread(new Runnable() {
-                @Override
-                public void run() {
-                    while (running)
-                    {
-                        try {
-                            int l=serialInputStream.available();
-                            final byte [] data=new byte[l];
-                            serialInputStream.read(data);
-                           recData=new String(data);
-                            Thread.sleep(1000);
-                        } catch (Exception e) {
-                            e.printStackTrace();
-                        }
-
-                    }
-                }
-            }).start();
-         }
-         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-     }
+     };
 
      @Override
      protected void onDestroy() {
         running=false;
-        if(serialPort!=null)
-        serialPort.close();
+       unregisterReceiver(mUsbReceiver);//取消广播监听
+        if(port!=null) {//如果设备被打开
+            try {
+                port.close();//关闭设备
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
          super.onDestroy();
      }
  }
