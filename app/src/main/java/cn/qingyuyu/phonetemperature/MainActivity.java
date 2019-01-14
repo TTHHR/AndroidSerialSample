@@ -8,6 +8,10 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
 import android.hardware.usb.UsbDevice;
 import android.hardware.usb.UsbDeviceConnection;
 import android.hardware.usb.UsbManager;
@@ -21,15 +25,18 @@ import com.hoho.android.usbserial.driver.UsbSerialProber;
 import java.io.IOException;
 import java.util.List;
 
- public class MainActivity extends AppCompatActivity {
-private TextView infoText;
-     private UsbManager usbManager;
-     UsbSerialPort port;
-     UsbSerialDriver driver;
-     boolean running =true;
-     private String recData="no data";
+ public class MainActivity extends AppCompatActivity implements SensorEventListener {
+     private TextView infoText;//显示单片机传来信息
+     private TextView cpuInfo;//显示手机传感器信息
+     // 手机传感器管理器
+     private SensorManager mSensorManager;
+     private UsbManager usbManager;//USB管理器
+     UsbSerialPort port;//串口端口
+     UsbSerialDriver driver;//USB设备
+     boolean running =true;//用来管理子线程
+     private String recData="no data";//用啦储存接收数据
      private static final String ACTION_USB_PERMISSION =
-             "com.android.example.USB_PERMISSION";
+             "com.android.example.USB_PERMISSION";//申请的USB权限
 
 
 
@@ -37,8 +44,11 @@ private TextView infoText;
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+        //实例化变量
         infoText=findViewById( R.id.infoText);
+        cpuInfo=findViewById( R.id.cpuInfo);
         usbManager = (UsbManager) getSystemService(Context.USB_SERVICE);
+        mSensorManager = (SensorManager)getSystemService(SENSOR_SERVICE);
         //申请权限的广播
         IntentFilter filter = new IntentFilter(ACTION_USB_PERMISSION);
         filter.addAction(UsbManager.ACTION_USB_DEVICE_DETACHED);
@@ -53,6 +63,16 @@ private TextView infoText;
 
 
     }
+
+     @Override
+     protected void onResume() {
+         // 为系统的温度传感器注册监听器
+         mSensorManager.registerListener(this,
+                 mSensorManager.getDefaultSensor(Sensor.TYPE_AMBIENT_TEMPERATURE),
+                 SensorManager.SENSOR_DELAY_GAME);
+         super.onResume();
+     }
+
      private void findSerialPortDevice() {
          //查找所有插入的设备
          List<UsbSerialDriver> availableDrivers = UsbSerialProber.getDefaultProber().findAllDrivers(usbManager);
@@ -163,9 +183,25 @@ private TextView infoText;
              }
          }
      };
-
+     @Override
+     // 当传感器精度改变时回调该方法。
+     public void onAccuracyChanged(Sensor sensor, int accuracy)
+     {
+     }
+     @Override
+     public void onSensorChanged(SensorEvent event) {
+         float[] values = event.values;
+         // 获取触发event的传感器类型
+         int sensorType = event.sensor.getType();
+// 温度传感器
+         if(sensorType==Sensor.TYPE_AMBIENT_TEMPERATURE) {
+             cpuInfo.setText("当前手机温度："+values[0]);
+         }
+     }
      @Override
      protected void onDestroy() {
+         // 程序退出时取消注册传感器监听器
+         mSensorManager.unregisterListener(this);
         running=false;
        unregisterReceiver(mUsbReceiver);//取消广播监听
         if(port!=null) {//如果设备被打开
