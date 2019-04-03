@@ -3,7 +3,7 @@ apply plugin: 'com.android.application'
 android {
     compileSdkVersion 28
     defaultConfig {
-        applicationId 'weidian.phonetemperature'
+        applicationId 'cn.qingyuyu.serial'
         targetSdkVersion 28
         versionCode 3
         versionName '1.2'
@@ -19,7 +19,6 @@ android {
     }
     productFlavors {
     }
-    buildToolsVersion '28.0.2'
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8

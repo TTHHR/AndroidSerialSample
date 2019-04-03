@@ -1,0 +1,14 @@
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    tools:context="com.example.menutest.MainActivity" >
+
+    <item
+        android:id="@+id/serialSet"
+
+        android:title="串口设置"/>
+    <item
+        android:id="@+id/xianshiSet"
+
+        android:title="显示设置"/>
+
+</menu>

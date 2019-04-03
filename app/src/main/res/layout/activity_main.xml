@@ -7,18 +7,24 @@
     tools:context=".MainActivity"
     android:orientation="vertical">
 
-    <TextView
-        android:id="@+id/cpuInfo"
+    <EditText
+        android:id="@+id/recText"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:gravity="center_horizontal"
-        android:paddingBottom="18dp"
-        android:text="Hello World!" />
-    <TextView
-        android:id="@+id/infoText"
+        android:ems="20"
+        android:lines="20" />
+
+    <EditText
+        android:id="@+id/sendText"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:gravity="center_horizontal"
-        android:text="Hello World!" />
+        android:ems="20"
+        android:text="待发送数据" />
+
+    <Button
+        android:id="@+id/button"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="发送" />
 
 </LinearLayout>
